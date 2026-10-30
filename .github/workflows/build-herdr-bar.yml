@@ -1,0 +1,129 @@
+name: Build Herdr Bar (Linux)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Rust 1.88 / Linux x86_64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UPSTREAM_REPO: https://github.com/jeffarese/herdr-bar.git
+      UPSTREAM_TAG: v0.13.0
+      UPSTREAM_SHA: a88c7b06c7a0f354d6120d465b0caa56fbde3fbf
+      CARGO_INCREMENTAL: "0"
+
+    steps:
+      - name: Obtener el codigo fuente y verificar el commit exacto
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$UPSTREAM_TAG" "$UPSTREAM_REPO" source
+          actual="$(git -C source rev-parse HEAD)"
+          echo "Commit esperado: $UPSTREAM_SHA"
+          echo "Commit descargado: $actual"
+          test "$actual" = "$UPSTREAM_SHA"
+
+      - name: Instalar toolchain fijo de Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustc --version
+          cargo --version
+
+      - name: Ejecutar tests
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo test --locked
+
+      - name: Compilar desde fuente (sin instalador upstream)
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          cargo build --release --locked
+          test -x target/release/herdr-bar
+          file target/release/herdr-bar
+
+      - name: Preparar plugin sin scripts de instalacion ni watchers automaticos
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/herdr-bar/bin
+          install -m 0755 source/target/release/herdr-bar dist/herdr-bar/bin/herdr-bar
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import tomllib
+
+          original = pathlib.Path('source/herdr-plugin.toml').read_text()
+          lines = []
+          skip = False
+          sections_to_remove = {'build', 'startup', 'events'}
+          for line in original.splitlines(keepends=True):
+              match = re.match(r'^\s*\[\[([\w.-]+)\]\]\s*$', line)
+              if match:
+                  skip = match.group(1) in sections_to_remove
+              if not skip:
+                  lines.append(line)
+          patched = ''.join(lines)
+          parsed = tomllib.loads(patched)
+          assert not any(section in parsed for section in sections_to_remove)
+          assert parsed['id'] == 'herdr-bar'
+          assert parsed['version'] == '0.13.0'
+          pathlib.Path('dist/herdr-bar/herdr-plugin.toml').write_text(patched)
+          PY
+          cat > dist/herdr-bar/safe-config.json <<'JSON'
+          {
+            "auto_titles": false,
+            "tab_status": false,
+            "actions": false
+          }
+          JSON
+          printf '%s\n' "$UPSTREAM_REPO" "$UPSTREAM_TAG" "$UPSTREAM_SHA" > dist/herdr-bar/SOURCE.txt
+          cat > dist/herdr-bar/INSTALL.txt <<'TXT'
+          Instalacion local segura:
+          1. Extraer el archivo tar.gz en un directorio permanente.
+          2. Ejecutar: herdr plugin link /ruta/permanente/herdr-bar
+          3. Consultar: herdr plugin config-dir herdr-bar
+          4. Copiar safe-config.json como config.json en ese directorio,
+             antes de abrir el buscador (auto_titles=false).
+          5. Anadir el atajo en ~/.config/herdr/config.toml:
+               [[keys.command]]
+               key = "ctrl+k"
+               type = "plugin_action"
+               command = "herdr-bar.open"
+               description = "Buscar agentes y terminales"
+          6. Ejecutar: herdr server reload-config
+          No usar 'herdr plugin install jeffarese/herdr-bar' para este paquete:
+          ese comando instala el plugin upstream y ejecuta su build original.
+          TXT
+
+      - name: Crear paquete y SHA-256
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          tar -czf herdr-bar-v0.13.0-linux-x86_64.tar.gz herdr-bar
+          sha256sum herdr-bar-v0.13.0-linux-x86_64.tar.gz > SHA256SUMS
+          sha256sum herdr-bar/bin/herdr-bar > BINARY_SHA256
+          cat SHA256SUMS BINARY_SHA256
+
+      - name: Publicar artefactos descargables
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: herdr-bar-v0.13.0-linux-x86_64
+          path: |
+            dist/herdr-bar-v0.13.0-linux-x86_64.tar.gz
+            dist/SHA256SUMS
+            dist/BINARY_SHA256
+          if-no-files-found: error
+          retention-days: 30
