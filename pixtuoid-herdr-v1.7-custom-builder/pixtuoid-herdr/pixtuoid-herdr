@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Ejecuta exclusivamente el binario compilado por build-docker.sh.
+# No necesita que Pixtuoid este instalado globalmente.
+set -euo pipefail
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+BIN="$HERE/dist/pixtuoid"
+
+if [[ "${1:-}" == "doctor" || "${1:-}" == "--doctor" ]]; then
+  exec python3 "$HERE/doctor.py"
+fi
+
+if [[ ! -x "$BIN" ]]; then
+  printf 'No se encontro el ejecutable del fork en:\n  %s\n\n' "$BIN" >&2
+  printf 'Primero ejecuta:\n  %s/build-docker.sh\n' "$HERE" >&2
+  exit 1
+fi
+
+if [[ "${1:-}" == "floating" ]]; then
+  python3 "$HERE/configure_floating.py"
+fi
+export PIXTUOID_HERDR=1
+exec "$BIN" "$@"
