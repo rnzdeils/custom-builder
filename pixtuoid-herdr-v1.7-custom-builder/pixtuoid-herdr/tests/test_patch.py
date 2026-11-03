@@ -26,7 +26,11 @@ class PatchTests(unittest.TestCase):
             self.assertTrue((base/'crates/pixtuoid/src/herdr.rs').exists())
             self.assertIn('note_for', (base/'crates/pixtuoid/src/floating/window.rs').read_text())
             self.assertIn('with_herdr_recap', (base/'crates/pixtuoid-scene/src/tooltip.rs').read_text())
-            self.assertIn('rows: Vec<String>', (base/'crates/pixtuoid-scene/src/display/compose.rs').read_text())
+            compose=(base/'crates/pixtuoid-scene/src/display/compose.rs').read_text()
+            self.assertIn('rows: Vec<String>', compose)
+            self.assertIn('Pensando en…', compose)
+            self.assertIn('Necesita atención', compose)
+            self.assertIn('Tarea:', compose)
             window_body = (base/'crates/pixtuoid/src/floating/window.rs').read_text()
             self.assertIn('herdr_hovered', window_body)
             self.assertIn('pixtuoid_scene::anim::Motion::Still', window_body)
@@ -60,9 +64,9 @@ class UXTests(unittest.TestCase):
             cfg.write_text('theme = "normal"\n[floating]\nwidth = 320\nheight = 300\n[sources]\nclaude = true\n')
             self.assertTrue(configure(root))
             data=cfg.read_text()
-            self.assertIn('width = 1280',data)
-            self.assertIn('height = 850',data)
-            self.assertIn('zoom = 2',data)
+            self.assertIn('width = 1600',data)
+            self.assertIn('height = 1000',data)
+            self.assertIn('zoom = 3',data)
             self.assertIn('[sources]\nclaude = true',data)
             self.assertFalse(configure(root))
 
@@ -88,3 +92,10 @@ class HoverAnimationTests(unittest.TestCase):
         self.assertNotIn('unwrap_or_else(|| self.ui.now())', script)
         self.assertIn('Motion::Still', script)
         self.assertIn('herdr_hovered', script)
+
+
+class LauncherTests(unittest.TestCase):
+    def test_floating_default(self):
+        script=(ROOT/'pixtuoid-herdr').read_text()
+        self.assertIn('if [[ $# -eq 0 ]]; then',script)
+        self.assertIn('set -- floating',script)

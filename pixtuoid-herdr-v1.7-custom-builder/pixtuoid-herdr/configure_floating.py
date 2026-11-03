@@ -8,10 +8,10 @@ import os
 import re
 
 
-def configure(home: Path, width=1280, height=850, zoom=2):
+def configure(home: Path, width=1600, height=1000, zoom=3):
     cfgdir = home / 'pixtuoid'
     cfgdir.mkdir(parents=True, exist_ok=True)
-    marker = cfgdir / '.herdr-floating-sized-v1.6'
+    marker = cfgdir / '.herdr-floating-sized-v1.8'
     config = cfgdir / 'config.toml'
     if marker.exists():
         return False
