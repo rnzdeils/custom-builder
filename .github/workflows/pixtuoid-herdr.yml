@@ -39,6 +39,24 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Locate Pixtuoid kit in root or nested upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f pixtuoid-herdr/apply_fork.py ]]; then
+            echo "Kit found at repository root."
+            exit 0
+          fi
+          mapfile -d '' candidates < <(find . -type f -path '*/pixtuoid-herdr/apply_fork.py' -print0)
+          if (( ${#candidates[@]} != 1 )); then
+            echo "::error::Expected exactly one pixtuoid-herdr kit; found ${#candidates[@]}."
+            printf 'Candidate: %s\n' "${candidates[@]}"
+            exit 1
+          fi
+          kit_dir="$(dirname "${candidates[0]}")"
+          echo "Using nested kit: $kit_dir"
+          cp -a -- "$kit_dir" ./pixtuoid-herdr
+
       - name: Check Python patch tests
         run: python3 -m unittest discover -s pixtuoid-herdr/tests -v
 
