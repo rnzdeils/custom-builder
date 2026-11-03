@@ -15,6 +15,10 @@ if [[ ! -x "$BIN" ]]; then
   exit 1
 fi
 
+if [[ $# -eq 0 ]]; then
+  set -- floating
+fi
+
 if [[ "${1:-}" == "floating" ]]; then
   python3 "$HERE/configure_floating.py"
 fi
