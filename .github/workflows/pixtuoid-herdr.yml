@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: "Pixtuoid tag or commit (main may break the patch if upstream changes)"
+        description: "Pixtuoid tag or commit (V1.7 patch targets v0.21.0; newer releases require adaptation)"
         required: true
-        default: "main"
+        default: "v0.21.0"
         type: string
       gray_office:
         description: "Mute normal-theme office/furniture colors, keep character colors"
