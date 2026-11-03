@@ -1,0 +1,118 @@
+name: Build Pixtuoid + Herdr (Linux)
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Pixtuoid tag or commit (main may break the patch if upstream changes)"
+        required: true
+        default: "main"
+        type: string
+      gray_office:
+        description: "Mute normal-theme office/furniture colors, keep character colors"
+        required: true
+        default: true
+        type: boolean
+      run_rust_tests:
+        description: "Run focused Rust Herdr tests before release build"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pixtuoid-herdr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout custom-builder kit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check Python patch tests
+        run: python3 -m unittest discover -s pixtuoid-herdr/tests -v
+
+      - name: Install native Linux build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libudev-dev pkg-config clang lld cmake \
+            libx11-dev libxcb1-dev libxkbcommon-dev libwayland-dev \
+            libxi-dev libxrandr-dev libxcursor-dev libxinerama-dev \
+            libgl1-mesa-dev libvulkan-dev
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
+          components: rustfmt
+
+      - name: Clone upstream Pixtuoid at requested revision
+        env:
+          SOURCE_REF: ${{ inputs.upstream_ref }}
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/pixtuoid/pixtuoid.git upstream
+          cd upstream
+          git checkout --detach "$SOURCE_REF"
+          git rev-parse HEAD > ../upstream-commit.txt
+          echo "Upstream: $(cat ../upstream-commit.txt)"
+
+      - name: Apply minimal Herdr patch
+        run: python3 pixtuoid-herdr/apply_fork.py upstream
+
+      - name: Apply optional Herdr Soft Gray palette
+        if: ${{ inputs.gray_office }}
+        run: |
+          if python3 pixtuoid-herdr/apply_soft_gray.py upstream; then
+            echo 'Herdr Soft Gray palette applied to normal theme.' | tee theme-status.txt
+          else
+            echo '::warning::Upstream palette format changed; building with unmodified normal theme.'
+            echo 'Soft Gray unavailable; original normal theme unchanged.' | tee theme-status.txt
+          fi
+
+      - name: Rust formatting
+        working-directory: upstream
+        run: cargo fmt --all
+
+      - name: Focused Rust tests (optional)
+        if: ${{ inputs.run_rust_tests }}
+        working-directory: upstream
+        run: cargo test --locked -p pixtuoid --lib herdr
+
+      - name: Build native Linux binary
+        working-directory: upstream
+        env:
+          CARGO_BUILD_JOBS: "2"
+        run: cargo build --locked --release -p pixtuoid
+
+      - name: Assemble portable bundle
+        run: |
+          set -euo pipefail
+          mkdir -p release/dist
+          install -m 0755 upstream/target/release/pixtuoid release/dist/pixtuoid
+          install -m 0755 pixtuoid-herdr/pixtuoid-herdr release/pixtuoid-herdr
+          install -m 0644 pixtuoid-herdr/doctor.py release/doctor.py
+          install -m 0644 pixtuoid-herdr/configure_floating.py release/configure_floating.py
+          cp upstream-commit.txt release/dist/upstream-commit.txt
+          if [ -f theme-status.txt ]; then cp theme-status.txt release/dist/theme-status.txt; fi
+          (cd release/dist && sha256sum pixtuoid > pixtuoid.sha256)
+          echo 'Execute: ./pixtuoid-herdr floating' > release/START-HERE.txt
+
+      - name: Upload Linux x86_64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixtuoid-herdr-linux-x86_64
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
